@@ -4,6 +4,8 @@ Real-time wildfire detection dashboard powered by [Newton](https://www.archetype
 
 Monitors 1,200+ wildfire cameras across California, focused on 5 major fire zones from recent devastating wildfires. Newton analyzes live camera frames for smoke, fire, haze, and visibility changes.
 
+![Newton Wildfire Watch](static/demo.png)
+
 ## Fire Zones
 
 | Zone | Fire | Year | Acres | County |
