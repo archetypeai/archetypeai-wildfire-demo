@@ -6,6 +6,31 @@
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SpinnerIcon from '@lucide/svelte/icons/loader';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import FlameIcon from '@lucide/svelte/icons/flame';
+	import CloudIcon from '@lucide/svelte/icons/cloud';
+	import BarChartIcon from '@lucide/svelte/icons/bar-chart-3';
+	import { marked } from 'marked';
+
+	marked.setOptions({ breaks: true, gfm: true });
+
+	const QUICK_PROMPTS = [
+		{
+			label: 'Smoke Check',
+			icon: FlameIcon,
+			query: 'Analyze this camera frame carefully for any signs of smoke, fire glow, or unusual haze. Is there anything that could indicate a wildfire in the area?'
+		},
+		{
+			label: 'Visibility',
+			icon: CloudIcon,
+			query: 'What are the current visibility and atmospheric conditions? Is there fog, haze, or any reduced visibility that could be weather-related or smoke-related?'
+		},
+		{
+			label: 'Summary',
+			icon: BarChartIcon,
+			query: 'Describe what you see in this camera frame: terrain, vegetation, sky conditions, time of day, and any notable observations relevant to wildfire monitoring.'
+		}
+	];
 
 	let {
 		messages = $bindable([]),
@@ -48,12 +73,52 @@
 	class={cn('flex max-h-full flex-col gap-3 overflow-hidden', className)}
 	{...restProps}
 >
+	{#if messages.length > 0}
+		<div class="flex items-center justify-between">
+			<div class="flex flex-wrap gap-1.5">
+				{#each QUICK_PROMPTS as prompt}
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={disabled || loading}
+						onclick={() => onsend?.(prompt.query)}
+					>
+						<prompt.icon class="size-3" aria-hidden="true" />
+						{prompt.label}
+					</Button>
+				{/each}
+			</div>
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				aria-label="Clear chat"
+				onclick={() => (messages = [])}
+			>
+				<Trash2Icon class="size-3.5" />
+			</Button>
+		</div>
+	{/if}
 	<ScrollArea class="min-h-0 flex-1">
 		<div class="flex flex-col gap-3 pr-3">
 			{#if messages.length === 0}
-				<p class="text-muted-foreground py-8 text-center text-sm">
-					Ask Newton about the camera feed
-				</p>
+				<div class="flex flex-col items-center gap-3 py-6">
+					<p class="text-muted-foreground text-center text-sm">
+						Ask Newton about the camera feed
+					</p>
+					<div class="flex flex-wrap justify-center gap-1.5">
+						{#each QUICK_PROMPTS as prompt}
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={disabled || loading}
+								onclick={() => onsend?.(prompt.query)}
+							>
+								<prompt.icon class="size-3" aria-hidden="true" />
+								{prompt.label}
+							</Button>
+						{/each}
+					</div>
+				</div>
 			{:else}
 				{#each messages as msg (msg.id)}
 					<div
@@ -64,7 +129,13 @@
 								: 'bg-atai-neutral/10 text-foreground mr-8 border border-atai-neutral/20'
 						)}
 					>
-						<p class="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+						{#if msg.role === 'assistant'}
+							<div class="prose-sm prose-invert leading-relaxed [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:text-foreground">
+								{@html marked(msg.text)}
+							</div>
+						{:else}
+							<p class="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+						{/if}
 						<span class="text-[10px] opacity-50">
 							{new Date(msg.timestamp).toLocaleTimeString('en-US', {
 								hour12: false,
