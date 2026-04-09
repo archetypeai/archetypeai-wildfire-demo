@@ -23,15 +23,19 @@ export async function POST({ request }) {
 		const buffer = await imgRes.arrayBuffer();
 		const rawBase64 = Buffer.from(buffer).toString('base64');
 
-		// Build camera-specific instruction with location context
+		// Build camera-specific context
 		let instruction = INSTRUCTION;
+		let focus;
 		if (camera) {
-			instruction +=
-				` You are currently viewing camera "${camera.name}" in ${camera.county} County, California` +
-				` (coordinates: ${camera.lat?.toFixed(3)}, ${camera.lon?.toFixed(3)}).`;
+			const loc = `Camera: "${camera.name}", located in ${camera.county} County, California.`;
+			instruction += ` ${loc}`;
+			focus =
+				query ||
+				`${loc} Analyze this frame for wildfire indicators: visible smoke plumes, fire glow, unusual haze or reduced visibility. ` +
+				'Report: visibility conditions, sky clarity, any smoke or fire signs, and overall risk assessment (clear/watch/warning/danger).';
+		} else {
+			focus = query || DEFAULT_FOCUS;
 		}
-
-		const focus = query || DEFAULT_FOCUS;
 		const analysis = await analyzeFrame(sessionId, rawBase64, instruction, focus);
 		return json({ analysis, timestamp: Date.now() });
 	} catch (err) {

@@ -31,16 +31,33 @@
 	function inferStatus(text) {
 		const lower = text.toLowerCase();
 
+		// Check for clear/negative signals first — these override keyword matches
+		const clearPatterns = [
+			/\bno\s+(visible\s+)?(signs?\s+of\s+)?(smoke|fire|haze|flame)/,
+			/\bno\s+(smoke|fire|haze|flame|wildfire)\b/,
+			/\b(clear|normal)\s+(sky|skies|visibility|conditions|atmosphere)/,
+			/\bvisibility\s+(is\s+)?(good|clear|normal|excellent)/,
+			/\bno\s+(abnormal|unusual)\s+(atmospheric|conditions)/,
+			/\bno\s+.{0,30}(indicators?|evidence|signs?)\b/
+		];
+
+		for (const pat of clearPatterns) {
+			if (pat.test(lower)) return 'good';
+		}
+
+		// Only flag danger for confirmed active fire language
 		const dangerPatterns = [
-			/\b(visible\s+)?(smoke|fire|flame|glow|burning)\b/,
-			/\b(active|confirmed)\s+(fire|wildfire|blaze)\b/,
-			/\bsmoke\s+plume/
+			/\b(active|confirmed|detected)\s+(fire|wildfire|blaze)\b/,
+			/\bsmoke\s+plume\s+(visible|detected|observed)\b/,
+			/\bflames?\s+(visible|detected|observed)\b/,
+			/\bfire\s+glow\s+(visible|detected|observed)\b/
 		];
 
 		const watchPatterns = [
-			/\b(haze|hazy|reduced\s+visibility|poor\s+visibility)\b/,
+			/\b(hazy|reduced\s+visibility|poor\s+visibility)\b/,
 			/\b(unusual|suspicious)\s+(haze|discoloration|glow)\b/,
-			/\bpossible\s+smoke\b/
+			/\bpossible\s+smoke\b/,
+			/\b(faint|distant)\s+smoke\b/
 		];
 
 		for (const pat of dangerPatterns) {
