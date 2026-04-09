@@ -6,6 +6,9 @@
   import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
   import CircleXIcon from '@lucide/svelte/icons/circle-x';
   import InfoIcon from '@lucide/svelte/icons/info';
+  import { marked } from 'marked';
+
+  marked.setOptions({ breaks: true, gfm: true });
 
   const STATUS_MAP = {
     good: { stripe: 'bg-atai-good', badge: 'bg-atai-good' },
@@ -64,6 +67,8 @@
   </Item.Header>
 
   <Item.Content>
-    <p class="text-muted-foreground leading-relaxed whitespace-pre-wrap">{message}</p>
+    <div class="text-muted-foreground prose-sm leading-relaxed [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:text-foreground">
+      {@html marked(message)}
+    </div>
   </Item.Content>
 </Item.Root>
