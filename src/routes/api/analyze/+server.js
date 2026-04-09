@@ -33,10 +33,13 @@ export async function POST({ request }) {
 		if (camera) {
 			const loc = `Camera: "${camera.name}", located in ${camera.county} County, California.`;
 			instruction += ` ${loc}`;
-			focus =
-				query ||
-				`${loc} Analyze this frame for wildfire indicators: visible smoke plumes, fire glow, unusual haze or reduced visibility. ` +
-				'Report: visibility conditions, sky clarity, any smoke or fire signs, and overall risk assessment (clear/watch/warning/danger).';
+			if (query) {
+				focus = `${loc} ${query}`;
+			} else {
+				focus =
+					`${loc} Analyze this frame for wildfire indicators: visible smoke plumes, fire glow, unusual haze or reduced visibility. ` +
+					'Report: visibility conditions, sky clarity, any smoke or fire signs, and overall risk assessment (clear/watch/warning/danger).';
+			}
 		} else {
 			focus = query || DEFAULT_FOCUS;
 		}
