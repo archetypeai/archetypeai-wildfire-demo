@@ -3,6 +3,7 @@
 	import BackgroundCard from '$lib/components/ui/patterns/background-card/index.js';
 	import Badge from '$lib/components/ui/primitives/badge/index.js';
 	import CameraIcon from '@lucide/svelte/icons/camera';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 
 	let {
 		camera = null,
@@ -12,10 +13,17 @@
 	} = $props();
 
 	let tick = $state(0);
+	let countdown = $state(15);
 
-	// Refresh full image every 15s
 	$effect(() => {
-		const id = setInterval(() => { tick++; }, 15000);
+		countdown = 15;
+		const id = setInterval(() => {
+			countdown--;
+			if (countdown <= 0) {
+				tick++;
+				countdown = 15;
+			}
+		}, 1000);
 		return () => clearInterval(id);
 	});
 
@@ -73,4 +81,11 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if camera}
+		<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+			<RefreshCwIcon class="size-3" aria-hidden="true" />
+			<span>Image refreshes in <span class="text-foreground font-mono">{countdown}s</span></span>
+		</div>
+	{/if}
 </BackgroundCard>
