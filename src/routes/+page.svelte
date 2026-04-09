@@ -231,8 +231,15 @@
 		</div>
 	</Menubar>
 
-	<div class="border-border border-b px-4 py-2">
+	<div class="border-border flex items-center gap-6 border-b px-4 py-2">
 		<ZoneSelector bind:selected={selectedZone} onchange={handleZoneChange} />
+		{#if !sessionId}
+			<div class="text-muted-foreground hidden items-center gap-4 text-xs lg:flex">
+				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">1</span> Select a fire zone</span>
+				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">2</span> Pick a camera</span>
+				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">3</span> Click Start Analysis</span>
+			</div>
+		{/if}
 	</div>
 
 	<main class="grid grid-cols-3 grid-rows-2 gap-4 overflow-hidden p-4">
