@@ -79,7 +79,7 @@
 
 		try {
 			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(sessionId, url);
+			const result = await analyze(sessionId, url, selectedCamera);
 			const text = result.analysis;
 			const status = inferStatus(text);
 
@@ -88,7 +88,8 @@
 					id: crypto.randomUUID(),
 					text,
 					timestamp: result.timestamp,
-					status
+					status,
+					camera: selectedCamera.name
 				},
 				...entries.slice(0, 49)
 			];
@@ -115,7 +116,7 @@
 
 		try {
 			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(sessionId, url, text);
+			const result = await analyze(sessionId, url, selectedCamera, text);
 			chatMessages = [
 				...chatMessages,
 				{

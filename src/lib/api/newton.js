@@ -7,8 +7,9 @@ export async function startSession() {
 	return res.json();
 }
 
-export async function analyze(sessionId, imageUrl, query) {
+export async function analyze(sessionId, imageUrl, camera, query) {
 	const body = { sessionId, imageUrl };
+	if (camera) body.camera = camera;
 	if (query) body.query = query;
 
 	const res = await fetch('/api/analyze', {

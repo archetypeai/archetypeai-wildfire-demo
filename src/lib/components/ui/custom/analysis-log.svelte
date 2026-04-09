@@ -40,7 +40,7 @@
 				{#each entries as entry (entry.id)}
 					<FlatLogItem
 						title={LABELS[entry.status] ?? 'SCANNING'}
-						message={entry.text}
+						message={entry.camera ? `[${entry.camera}] ${entry.text}` : entry.text}
 						status={entry.status}
 						detail={formatTime(entry.timestamp)}
 					/>
