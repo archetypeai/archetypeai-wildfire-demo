@@ -7,8 +7,9 @@ const INSTRUCTION =
 	'California has experienced devastating wildfires including the Palisades Fire (23,448 acres, LA County, Jan 2025), ' +
 	'Eaton Fire (14,021 acres, LA County, Jan 2025), and Park Fire (429,603 acres, Butte County, Jul 2024). ' +
 	'Your role is to analyze camera frames for signs of smoke, fire, haze, or unusual atmospheric conditions. ' +
-	'IMPORTANT: The "UC San Diego" watermark on all images is the ALERTCalifornia program operator logo — it does NOT indicate the camera location. ' +
-	'Always use the camera name and county provided in the prompt to identify the location.';
+	'IMPORTANT: All images contain watermark text such as "UC San Diego", "UCSD", "HPWREN", "SIO", "SDSC", or "ALERTCalifornia". ' +
+	'These are the organizations that operate the camera network, NOT the camera location. ' +
+	'ONLY use the camera name and county provided in the prompt to identify where the camera is.';
 const FOCUS = 'Answer questions about the wildfire camera image.';
 
 export async function POST() {
