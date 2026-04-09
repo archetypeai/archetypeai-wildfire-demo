@@ -33,12 +33,13 @@
 
 		// Check for clear/negative signals first — these override keyword matches
 		const clearPatterns = [
-			/\bno\s+(visible\s+)?(signs?\s+of\s+)?(smoke|fire|haze|flame)/,
-			/\bno\s+(smoke|fire|haze|flame|wildfire)\b/,
+			/\b(no|not|does not|do not|doesn't|don't)\s+.{0,30}(signs?\s+of\s+)?(smoke|fire|haze|flame|wildfire)/,
+			/\b(no|not)\s+(visible\s+)?(smoke|fire|haze|flame|wildfire)\b/,
 			/\b(clear|normal)\s+(sky|skies|visibility|conditions|atmosphere)/,
 			/\bvisibility\s+(is\s+)?(good|clear|normal|excellent)/,
-			/\bno\s+(abnormal|unusual)\s+(atmospheric|conditions)/,
-			/\bno\s+.{0,30}(indicators?|evidence|signs?)\b/
+			/\b(no|not|does not|doesn't)\s+.{0,20}(abnormal|unusual)\s+(atmospheric|conditions)/,
+			/\b(no|not|does not|doesn't)\s+.{0,30}(indicators?|evidence|signs?|display|show)\b/,
+			/\bundisturbed\s+natural\s+environment/
 		];
 
 		for (const pat of clearPatterns) {
