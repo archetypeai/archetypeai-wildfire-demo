@@ -249,19 +249,19 @@
 			class="max-h-[360px]"
 		/>
 
-		<ChatPanel
-			bind:messages={chatMessages}
-			loading={chatLoading}
-			disabled={!sessionId}
-			onsend={handleChatSend}
-			class="row-span-2 max-h-full"
-		/>
-
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
 			loading={camerasLoading}
 			onselect={handleCameraSelect}
+			class="row-span-2 max-h-full"
+		/>
+
+		<ChatPanel
+			bind:messages={chatMessages}
+			loading={chatLoading}
+			disabled={!sessionId}
+			onsend={handleChatSend}
 			class="row-span-2 max-h-full"
 		/>
 
