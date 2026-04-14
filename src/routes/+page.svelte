@@ -242,11 +242,19 @@
 		{/if}
 	</div>
 
-	<main class="grid grid-cols-3 grid-rows-2 gap-4 overflow-hidden p-4">
+	<main class="grid grid-cols-3 grid-rows-[auto_1fr] gap-4 overflow-hidden p-4">
 		<CameraViewer
 			camera={selectedCamera}
 			status={busy ? 'analyzing' : sessionId ? 'clear' : 'idle'}
-			class="max-h-full"
+			class="max-h-[360px]"
+		/>
+
+		<ChatPanel
+			bind:messages={chatMessages}
+			loading={chatLoading}
+			disabled={!sessionId}
+			onsend={handleChatSend}
+			class="row-span-2 max-h-full"
 		/>
 
 		<CameraGrid
@@ -257,14 +265,6 @@
 			class="row-span-2 max-h-full"
 		/>
 
-		<AnalysisLog {entries} class="row-span-2 max-h-full" />
-
-		<ChatPanel
-			bind:messages={chatMessages}
-			loading={chatLoading}
-			disabled={!sessionId}
-			onsend={handleChatSend}
-			class="max-h-full"
-		/>
+		<AnalysisLog {entries} class="max-h-full" />
 	</main>
 </div>
