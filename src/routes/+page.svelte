@@ -18,6 +18,8 @@
 	let running = $state(false);
 	let sessionStatus = $state('idle');
 	let busy = $state(false);
+	let scanning = $state(false);
+	let cameraStatuses = $state({});
 	let entries = $state([]);
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
@@ -73,6 +75,7 @@
 		camerasLoading = true;
 		selectedCamera = null;
 		selectedCameraId = null;
+		cameraStatuses = {};
 		try {
 			const data = await fetchCameras(zoneId);
 			cameras = data.cameras;
@@ -114,6 +117,43 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	// Scan every camera in the current zone once, in parallel (capped), updating
+	// each camera's status dot and the analysis log as results arrive.
+	async function handleScanZone() {
+		if (scanning || cameras.length === 0) return;
+		scanning = true;
+		for (const cam of cameras) cameraStatuses[cam.id] = 'analyzing';
+
+		const queue = [...cameras];
+		const CONCURRENCY = 4;
+		const worker = async () => {
+			while (queue.length) {
+				const cam = queue.shift();
+				try {
+					const result = await analyze(getImageUrl(cam.id), cam);
+					const status = inferStatus(result.analysis);
+					cameraStatuses[cam.id] = status;
+					entries = [
+						{
+							id: crypto.randomUUID(),
+							text: result.analysis,
+							timestamp: result.timestamp,
+							status,
+							camera: cam.name
+						},
+						...entries
+					].slice(0, 50);
+				} catch (err) {
+					cameraStatuses[cam.id] = 'error';
+					console.error(`Scan failed for ${cam.name}:`, err);
+				}
+			}
+		};
+
+		await Promise.all(Array.from({ length: Math.min(CONCURRENCY, cameras.length) }, worker));
+		scanning = false;
 	}
 
 	async function handleChatSend(text) {
@@ -206,6 +246,14 @@
 			{#if sessionStatus === 'active'}
 				<StatusBadge label="Newton" percentage={100} initial="N" />
 			{/if}
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={handleScanZone}
+				disabled={scanning || cameras.length === 0}
+			>
+				{scanning ? 'Scanning…' : 'Scan Zone'}
+			</Button>
 			{#if !running}
 				<Button variant="default" size="sm" onclick={handleStart}>Start Analysis</Button>
 			{:else}
@@ -235,6 +283,7 @@
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
+			statuses={cameraStatuses}
 			loading={camerasLoading}
 			onselect={handleCameraSelect}
 			class="row-span-2 max-h-full"
