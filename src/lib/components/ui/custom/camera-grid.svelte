@@ -7,11 +7,27 @@
 	let {
 		cameras = [],
 		selectedId = $bindable(null),
+		statuses = {},
 		loading = false,
 		onselect,
 		class: className,
 		...restProps
 	} = $props();
+
+	const DOT = {
+		analyzing: 'bg-atai-neutral animate-pulse',
+		good: 'bg-atai-good',
+		warning: 'bg-atai-warning',
+		critical: 'bg-atai-critical',
+		error: 'bg-muted-foreground'
+	};
+	const DOT_LABEL = {
+		analyzing: 'Scanning',
+		good: 'Clear',
+		warning: 'Watch',
+		critical: 'Danger',
+		error: 'Scan failed'
+	};
 
 	let tick = $state(0);
 
@@ -58,6 +74,14 @@
 							class="aspect-video w-full object-cover"
 							loading="lazy"
 						/>
+						{#if statuses[cam.id]}
+							<span class="absolute top-1 right-1 flex items-center">
+								<span
+									class={cn('block size-2.5 rounded-full ring-2 ring-black/30', DOT[statuses[cam.id]])}
+								></span>
+								<span class="sr-only">{DOT_LABEL[statuses[cam.id]] ?? statuses[cam.id]}</span>
+							</span>
+						{/if}
 						<div class="bg-background/80 absolute inset-x-0 bottom-0 px-1.5 py-0.5 backdrop-blur-sm">
 							<span class="text-foreground block truncate font-mono text-[10px]">
 								{cam.name}

@@ -7,7 +7,7 @@
 	import CameraViewer from '$lib/components/ui/custom/camera-viewer.svelte';
 	import AnalysisLog from '$lib/components/ui/custom/analysis-log.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
-	import { startSession, analyze, endSession, fetchCameras } from '$lib/api/newton.js';
+	import { analyze, fetchCameras } from '$lib/api/newton.js';
 
 	let selectedZone = $state('palisades');
 	let cameras = $state([]);
@@ -15,10 +15,11 @@
 	let selectedCameraId = $state(null);
 	let camerasLoading = $state(false);
 
-	let sessionId = $state(null);
+	let running = $state(false);
 	let sessionStatus = $state('idle');
 	let busy = $state(false);
-	let frameCount = $state(0);
+	let scanning = $state(false);
+	let cameraStatuses = $state({});
 	let entries = $state([]);
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
@@ -74,6 +75,7 @@
 		camerasLoading = true;
 		selectedCamera = null;
 		selectedCameraId = null;
+		cameraStatuses = {};
 		try {
 			const data = await fetchCameras(zoneId);
 			cameras = data.cameras;
@@ -90,14 +92,13 @@
 	}
 
 	async function analyzeSelected() {
-		if (busy || !sessionId || !selectedCamera) return;
+		if (busy || !running || !selectedCamera) return;
 
 		busy = true;
-		frameCount++;
 
 		try {
 			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(sessionId, url, selectedCamera);
+			const result = await analyze(url, selectedCamera);
 			const text = result.analysis;
 			const status = inferStatus(text);
 
@@ -118,8 +119,45 @@
 		}
 	}
 
+	// Scan every camera in the current zone once, in parallel (capped), updating
+	// each camera's status dot and the analysis log as results arrive.
+	async function handleScanZone() {
+		if (scanning || cameras.length === 0) return;
+		scanning = true;
+		for (const cam of cameras) cameraStatuses[cam.id] = 'analyzing';
+
+		const queue = [...cameras];
+		const CONCURRENCY = 4;
+		const worker = async () => {
+			while (queue.length) {
+				const cam = queue.shift();
+				try {
+					const result = await analyze(getImageUrl(cam.id), cam);
+					const status = inferStatus(result.analysis);
+					cameraStatuses[cam.id] = status;
+					entries = [
+						{
+							id: crypto.randomUUID(),
+							text: result.analysis,
+							timestamp: result.timestamp,
+							status,
+							camera: cam.name
+						},
+						...entries
+					].slice(0, 50);
+				} catch (err) {
+					cameraStatuses[cam.id] = 'error';
+					console.error(`Scan failed for ${cam.name}:`, err);
+				}
+			}
+		};
+
+		await Promise.all(Array.from({ length: Math.min(CONCURRENCY, cameras.length) }, worker));
+		scanning = false;
+	}
+
 	async function handleChatSend(text) {
-		if (!sessionId || !selectedCamera) return;
+		if (!running || !selectedCamera) return;
 
 		chatMessages = [
 			...chatMessages,
@@ -134,7 +172,7 @@
 
 		try {
 			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(sessionId, url, selectedCamera, text);
+			const result = await analyze(url, selectedCamera, text);
 			chatMessages = [
 				...chatMessages,
 				{
@@ -160,36 +198,21 @@
 		}
 	}
 
-	async function handleStart() {
-		if (sessionId) return;
-		sessionStatus = 'connecting';
+	function handleStart() {
+		if (running) return;
+		running = true;
+		sessionStatus = 'active';
 
-		try {
-			const result = await startSession();
-			sessionId = result.sessionId;
-			sessionStatus = 'active';
-
-			analyzeSelected();
-			intervalId = setInterval(analyzeSelected, 10000);
-		} catch (err) {
-			console.error('Session failed:', err);
-			sessionStatus = 'error';
-		}
+		analyzeSelected();
+		intervalId = setInterval(analyzeSelected, 10000);
 	}
 
-	async function handleStop() {
+	function handleStop() {
 		if (intervalId) {
 			clearInterval(intervalId);
 			intervalId = null;
 		}
-		if (sessionId) {
-			try {
-				await endSession(sessionId);
-			} catch {
-				// ignore
-			}
-			sessionId = null;
-		}
+		running = false;
 		sessionStatus = 'idle';
 		busy = false;
 	}
@@ -223,7 +246,15 @@
 			{#if sessionStatus === 'active'}
 				<StatusBadge label="Newton" percentage={100} initial="N" />
 			{/if}
-			{#if !sessionId}
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={handleScanZone}
+				disabled={scanning || cameras.length === 0}
+			>
+				{scanning ? 'Scanning…' : 'Scan Zone'}
+			</Button>
+			{#if !running}
 				<Button variant="default" size="sm" onclick={handleStart}>Start Analysis</Button>
 			{:else}
 				<Button variant="outline" size="sm" onclick={handleStop}>Stop</Button>
@@ -233,7 +264,7 @@
 
 	<div class="border-border flex items-center gap-6 border-b px-4 py-2">
 		<ZoneSelector bind:selected={selectedZone} onchange={handleZoneChange} />
-		{#if !sessionId}
+		{#if !running}
 			<div class="text-muted-foreground hidden items-center gap-4 text-xs lg:flex">
 				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">1</span> Select a fire zone</span>
 				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">2</span> Pick a camera</span>
@@ -245,13 +276,14 @@
 	<main class="grid grid-cols-3 grid-rows-[auto_1fr] gap-4 overflow-hidden p-4">
 		<CameraViewer
 			camera={selectedCamera}
-			status={busy ? 'analyzing' : sessionId ? 'clear' : 'idle'}
+			status={busy ? 'analyzing' : running ? 'clear' : 'idle'}
 			class="max-h-[360px]"
 		/>
 
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
+			statuses={cameraStatuses}
 			loading={camerasLoading}
 			onselect={handleCameraSelect}
 			class="row-span-2 max-h-full"
@@ -260,7 +292,7 @@
 		<ChatPanel
 			bind:messages={chatMessages}
 			loading={chatLoading}
-			disabled={!sessionId}
+			disabled={!running}
 			onsend={handleChatSend}
 			class="row-span-2 max-h-full"
 		/>

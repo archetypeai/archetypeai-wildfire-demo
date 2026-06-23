@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { analyzeFrame } from '$lib/server/newton.js';
-import { getImageUrl } from '$lib/server/cameras.js';
+import { analyzeImage } from '$lib/server/newton.js';
 
 const INSTRUCTION =
 	'You are a wildfire detection AI monitoring live ALERTCalifornia camera feeds across California. ' +
@@ -16,9 +15,9 @@ const DEFAULT_FOCUS =
 
 export async function POST({ request }) {
 	try {
-		const { sessionId, imageUrl, camera, query } = await request.json();
-		if (!sessionId || !imageUrl) {
-			return json({ error: 'Missing sessionId or imageUrl' }, { status: 400 });
+		const { imageUrl, camera, query } = await request.json();
+		if (!imageUrl) {
+			return json({ error: 'Missing imageUrl' }, { status: 400 });
 		}
 
 		// Fetch the camera image server-side and convert to base64
@@ -26,6 +25,7 @@ export async function POST({ request }) {
 		if (!imgRes.ok) throw new Error(`Failed to fetch camera image: ${imgRes.status}`);
 		const buffer = await imgRes.arrayBuffer();
 		const rawBase64 = Buffer.from(buffer).toString('base64');
+		const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
 
 		// Build camera-specific context
 		let instruction = INSTRUCTION;
@@ -43,7 +43,7 @@ export async function POST({ request }) {
 		} else {
 			focus = query || DEFAULT_FOCUS;
 		}
-		const analysis = await analyzeFrame(sessionId, rawBase64, instruction, focus);
+		const analysis = await analyzeImage(rawBase64, instruction, focus, mimeType);
 		return json({ analysis, timestamp: Date.now() });
 	} catch (err) {
 		return json({ error: err.message }, { status: 500 });
