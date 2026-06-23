@@ -1,14 +1,7 @@
-export async function startSession() {
-	const res = await fetch('/api/session', { method: 'POST' });
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({}));
-		throw new Error(err.error || 'Failed to create session');
-	}
-	return res.json();
-}
-
-export async function analyze(sessionId, imageUrl, camera, query) {
-	const body = { sessionId, imageUrl };
+// Stateless analysis against Newton C 2.6 via /query — no session lifecycle.
+// Each call sends one camera frame as a self-contained request.
+export async function analyze(imageUrl, camera, query) {
+	const body = { imageUrl };
 	if (camera) body.camera = camera;
 	if (query) body.query = query;
 
@@ -22,14 +15,6 @@ export async function analyze(sessionId, imageUrl, camera, query) {
 		throw new Error(err.error || 'Analysis failed');
 	}
 	return res.json();
-}
-
-export async function endSession(sessionId) {
-	await fetch('/api/session', {
-		method: 'DELETE',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ sessionId })
-	});
 }
 
 export async function fetchCameras(zoneId) {
