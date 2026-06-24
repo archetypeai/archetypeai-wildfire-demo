@@ -121,7 +121,9 @@
 	// and the rolling log.
 	async function scanZoneOnce() {
 		if (cameras.length === 0) return;
+		const prevStatus = {};
 		for (const cam of cameras) {
+			prevStatus[cam.id] = cameraResults[cam.id]?.status;
 			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
 		}
 		try {
@@ -142,8 +144,10 @@
 				...zoneHistory
 			].slice(0, 30);
 		} catch (err) {
+			// Transient API failure — keep the last known statuses rather than
+			// flashing the whole grid to error on one bad scan.
 			for (const cam of cameras) {
-				cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
+				cameraResults[cam.id] = { ...cameraResults[cam.id], status: prevStatus[cam.id] };
 			}
 			console.error('Zone scan failed:', err);
 		}
