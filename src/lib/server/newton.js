@@ -144,8 +144,28 @@ export async function analyzeZone(cameras, instruction, timeoutMs = 120000) {
 
 	return {
 		overview: overview.trim() || 'No overview returned.',
-		cameras: perCamera.map((c, i) => ({ camera_index: i, status: c.status }))
+		cameras: perCamera.map((c, i) => ({ camera_index: i, status: c.status, summary: c.summary }))
 	};
+}
+
+// Text-only Q&A about a zone, grounded in the latest scan findings. No images
+// are sent (so no GPU-vision pressure) — the model answers from the digest.
+export async function chatAboutZone(question, findings, overview, instruction, timeoutMs = 60000) {
+	const digest = (findings || [])
+		.map(
+			(f, i) =>
+				`${i + 1}. ${f.name}: ${String(f.status || '').toUpperCase()} — ${f.summary || 'no summary'}`
+		)
+		.join('\n');
+	const context = `Latest zone scan.\nOverview: ${overview || 'n/a'}\n\nPer-camera findings:\n${digest}`;
+	return postQuery(
+		{
+			query: `${context}\n\nUser question: ${question}\n\nAnswer concisely, based only on the scan results above. You can answer both zone-wide questions and questions about a specific camera (referenced by its name). If the answer isn't in the results, say so.`,
+			instruction_prompt: `${instruction} You answer questions about a zone of wildfire cameras using the provided scan results — both zone-wide and about individual cameras by name.`,
+			max_new_tokens: 400
+		},
+		timeoutMs
+	);
 }
 
 // Single stateless /query call against the C 2.6 fusion model. The camera frame

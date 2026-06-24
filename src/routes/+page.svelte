@@ -8,7 +8,7 @@
 	import ZoneAnalysis from '$lib/components/ui/custom/zone-analysis.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
 	import * as Dialog from '$lib/components/ui/primitives/dialog/index.js';
-	import { analyze, analyzeZone, fetchCameras } from '$lib/api/newton.js';
+	import { analyze, analyzeZone, chatZone, fetchCameras } from '$lib/api/newton.js';
 
 	let selectedZone = $state('palisades');
 	let cameras = $state([]);
@@ -21,8 +21,11 @@
 	let nextScanIn = $state(null); // seconds until the next scan, during the idle wait
 	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
 	let zoneHistory = $state([]); // [{ id, text, status, timestamp }] — one per scan, newest first
+	let zoneFindings = $state([]); // latest per-camera findings [{ name, status, summary }] for chat context
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
+
+	let zoneLabel = $derived(selectedZone.charAt(0).toUpperCase() + selectedZone.slice(1));
 	let modalOpen = $state(false); // per-camera focus modal
 
 	let scanTimeout = null;
@@ -92,6 +95,7 @@
 		selectedCameraId = null;
 		cameraResults = {};
 		zoneHistory = [];
+		zoneFindings = [];
 		chatMessages = [];
 		try {
 			const data = await fetchCameras(zoneId);
@@ -139,6 +143,11 @@
 				if (!cam) continue;
 				cameraResults[cam.id] = { ...cameraResults[cam.id], status: r.status, timestamp };
 			}
+			zoneFindings = results.map((r) => ({
+				name: cameras[r.camera_index]?.name ?? `Camera ${r.camera_index + 1}`,
+				status: r.status,
+				summary: r.summary ?? ''
+			}));
 			const statuses = results.map((r) => r.status);
 			const aggregate = statuses.includes('critical')
 				? 'critical'
@@ -225,7 +234,7 @@
 	}
 
 	async function handleChatSend(text) {
-		if (!selectedCamera) return;
+		if (zoneFindings.length === 0) return;
 
 		chatMessages = [
 			...chatMessages,
@@ -234,13 +243,13 @@
 		chatLoading = true;
 
 		try {
-			const result = await analyze(getImageUrl(selectedCamera.id), selectedCamera, text);
+			const result = await chatZone(text, zoneFindings, zoneHistory[0]?.text ?? '');
 			chatMessages = [
 				...chatMessages,
 				{
 					id: crypto.randomUUID(),
 					role: 'assistant',
-					text: result.analysis,
+					text: result.answer,
 					timestamp: result.timestamp
 				}
 			];
@@ -337,7 +346,8 @@
 		<ChatPanel
 			bind:messages={chatMessages}
 			loading={chatLoading}
-			disabled={!selectedCamera}
+			disabled={zoneFindings.length === 0}
+			zoneName={zoneLabel}
 			onsend={handleChatSend}
 			class="max-h-full"
 		/>
