@@ -26,17 +26,21 @@ function extractText(payload) {
 
 const ZONE_STATUS_MAP = { clear: 'good', watch: 'warning', danger: 'critical' };
 
-// Tolerant JSON-array parse: strip markdown fences and slice to the outer [...].
-function parseJsonArray(text) {
+// Tolerant JSON-object parse: strip markdown fences, then slice to the outer {}.
+function parseJson(text) {
 	let t = (text || '').trim();
 	t = t
 		.replace(/^```(?:json)?\s*/i, '')
 		.replace(/\s*```$/, '')
 		.trim();
-	const start = t.indexOf('[');
-	const end = t.lastIndexOf(']');
-	if (start !== -1 && end !== -1) t = t.slice(start, end + 1);
-	return JSON.parse(t);
+	try {
+		return JSON.parse(t);
+	} catch {
+		const start = t.indexOf('{');
+		const end = t.lastIndexOf('}');
+		if (start !== -1 && end !== -1) return JSON.parse(t.slice(start, end + 1));
+		throw new Error('Could not parse JSON from model response');
+	}
 }
 
 async function fetchBase64Event(url) {
@@ -53,9 +57,9 @@ async function fetchBase64Event(url) {
 }
 
 // One stateless /query covering an entire zone: every camera frame is attached
-// as an independent image (`multi_image: true`, up to 16) and the model returns
-// a JSON array of per-camera assessments. Returns results aligned to the input
-// camera order: [{ camera_index, status: good|warning|critical, summary }].
+// as an independent image (`multi_image: true`, up to 16). The model returns a
+// single zone-level overview plus per-camera statuses (for the grid dots).
+// Returns { overview, cameras: [{ camera_index, status: good|warning|critical }] }.
 export async function analyzeZone(cameras, instruction, timeoutMs = 120000) {
 	const events = await Promise.all(
 		cameras.map((cam) =>
@@ -70,9 +74,10 @@ export async function analyzeZone(cameras, instruction, timeoutMs = 120000) {
 		.join('. ');
 	const query =
 		`You are given ${cameras.length} wildfire camera frames as independent images, in order. ${list}. ` +
-		'For EACH image, assess wildfire risk from visible smoke, fire glow, haze, or unusual atmospheric conditions. ' +
-		`Respond with ONLY a JSON array (no markdown fences) of ${cameras.length} objects in image order: ` +
-		'[{"camera_index": <int>, "status": "clear|watch|danger", "summary": "<one or two sentences>"}].';
+		'Assess wildfire risk from visible smoke, fire glow, haze, or unusual atmospheric conditions. ' +
+		'Respond with ONLY a JSON object (no markdown fences): ' +
+		'{"overview": "<2-4 sentences assessing the WHOLE zone: overall risk level, roughly how many cameras are clear vs of concern, and name any specific camera showing smoke, fire, or haze>", ' +
+		`"cameras": [{"camera_index": <int>, "status": "clear|watch|danger"}]} with one cameras entry per image, in image order (${cameras.length} total).`;
 
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -89,7 +94,7 @@ export async function analyzeZone(cameras, instruction, timeoutMs = 120000) {
 				instruction_prompt: `${instruction} Output only the JSON array, no prose, no markdown fences.`,
 				file_ids: [],
 				model: MODEL_VERSION,
-				max_new_tokens: 1500,
+				max_new_tokens: 1000,
 				multi_image: true,
 				events
 			}),
@@ -99,15 +104,18 @@ export async function analyzeZone(cameras, instruction, timeoutMs = 120000) {
 			const err = await res.json().catch(() => ({}));
 			throw new Error(`POST /query failed: ${res.status} - ${JSON.stringify(err)}`);
 		}
-		const parsed = parseJsonArray(extractText(await res.json()));
-		return cameras.map((cam, i) => {
-			const entry = parsed.find((p) => p.camera_index === i) ?? parsed[i] ?? {};
-			return {
-				camera_index: i,
-				status: ZONE_STATUS_MAP[String(entry.status).toLowerCase()] ?? 'good',
-				summary: entry.summary ?? 'No assessment returned.'
-			};
-		});
+		const parsed = parseJson(extractText(await res.json()));
+		const list = Array.isArray(parsed.cameras) ? parsed.cameras : [];
+		return {
+			overview: parsed.overview ?? 'No overview returned.',
+			cameras: cameras.map((cam, i) => {
+				const entry = list.find((p) => p.camera_index === i) ?? list[i] ?? {};
+				return {
+					camera_index: i,
+					status: ZONE_STATUS_MAP[String(entry.status).toLowerCase()] ?? 'good'
+				};
+			})
+		};
 	} finally {
 		clearTimeout(timeoutId);
 	}

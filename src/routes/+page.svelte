@@ -5,7 +5,7 @@
 	import ZoneSelector from '$lib/components/ui/custom/zone-selector.svelte';
 	import CameraGrid from '$lib/components/ui/custom/camera-grid.svelte';
 	import CameraViewer from '$lib/components/ui/custom/camera-viewer.svelte';
-	import AnalysisLog from '$lib/components/ui/custom/analysis-log.svelte';
+	import ZoneAnalysis from '$lib/components/ui/custom/zone-analysis.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
 	import * as Dialog from '$lib/components/ui/primitives/dialog/index.js';
 	import { analyze, analyzeZone, fetchCameras } from '$lib/api/newton.js';
@@ -18,7 +18,7 @@
 
 	let scanning = $state(false); // continuous zone scan active
 	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
-	let entries = $state([]); // zone-wide rolling log
+	let zoneOverview = $state(null); // { text, status, timestamp } from the latest scan
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
 	let modalOpen = $state(false); // per-camera focus modal
@@ -85,6 +85,7 @@
 		selectedCamera = null;
 		selectedCameraId = null;
 		cameraResults = {};
+		zoneOverview = null;
 		chatMessages = [];
 		try {
 			const data = await fetchCameras(zoneId);
@@ -109,16 +110,6 @@
 			const result = await analyze(getImageUrl(cam.id), cam);
 			const status = inferStatus(result.analysis);
 			cameraResults[cam.id] = { status, text: result.analysis, timestamp: result.timestamp };
-			entries = [
-				{
-					id: crypto.randomUUID(),
-					text: result.analysis,
-					timestamp: result.timestamp,
-					status,
-					camera: cam.name
-				},
-				...entries
-			].slice(0, 50);
 		} catch (err) {
 			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
 			console.error(`Analysis failed for ${cam.name}:`, err);
@@ -134,22 +125,19 @@
 			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
 		}
 		try {
-			const { results, timestamp } = await analyzeZone(cameras);
+			const { overview, results, timestamp } = await analyzeZone(cameras);
 			for (const r of results) {
 				const cam = cameras[r.camera_index];
 				if (!cam) continue;
-				cameraResults[cam.id] = { status: r.status, text: r.summary, timestamp };
-				entries = [
-					{
-						id: crypto.randomUUID(),
-						text: r.summary,
-						timestamp,
-						status: r.status,
-						camera: cam.name
-					},
-					...entries
-				].slice(0, 50);
+				cameraResults[cam.id] = { ...cameraResults[cam.id], status: r.status, timestamp };
 			}
+			const statuses = results.map((r) => r.status);
+			const aggregate = statuses.includes('critical')
+				? 'critical'
+				: statuses.includes('warning')
+					? 'warning'
+					: 'good';
+			zoneOverview = { text: overview, status: aggregate, timestamp };
 		} catch (err) {
 			for (const cam of cameras) {
 				cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
@@ -302,7 +290,7 @@
 			class="max-h-full"
 		/>
 
-		<AnalysisLog {entries} class="max-h-full" />
+		<ZoneAnalysis overview={zoneOverview} {scanning} class="max-h-full" />
 
 		<ChatPanel
 			bind:messages={chatMessages}

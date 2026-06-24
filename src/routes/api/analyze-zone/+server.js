@@ -15,8 +15,8 @@ export async function POST({ request }) {
 		if (!Array.isArray(cameras) || cameras.length === 0) {
 			return json({ error: 'Missing cameras' }, { status: 400 });
 		}
-		const results = await analyzeZone(cameras, INSTRUCTION);
-		return json({ results, timestamp: Date.now() });
+		const { overview, cameras: results } = await analyzeZone(cameras, INSTRUCTION);
+		return json({ overview, results, timestamp: Date.now() });
 	} catch (err) {
 		return json({ error: err.message }, { status: 500 });
 	}
