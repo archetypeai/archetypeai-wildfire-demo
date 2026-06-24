@@ -3,6 +3,9 @@
 	import Badge from '$lib/components/ui/primitives/badge/index.js';
 	import { ScrollArea } from '$lib/components/ui/primitives/scroll-area/index.js';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import { marked } from 'marked';
+
+	marked.setOptions({ breaks: true, gfm: true });
 
 	let { camera = null, result = null, class: className, ...restProps } = $props();
 
@@ -46,8 +49,9 @@
 	}
 </script>
 
-<div class={cn('flex flex-col gap-3', className)} {...restProps}>
-	<div class="relative overflow-hidden rounded-xs">
+<div class={cn('grid gap-4 md:grid-cols-2', className)} {...restProps}>
+	<!-- Left: camera image -->
+	<div class="relative self-start overflow-hidden rounded-xs">
 		{#if imageUrl}
 			<img
 				src={imageUrl}
@@ -69,22 +73,30 @@
 		{/if}
 	</div>
 
-	{#if result?.text}
-		<ScrollArea class="max-h-48">
-			<p class="text-foreground pr-3 text-sm leading-relaxed whitespace-pre-wrap">{result.text}</p>
-		</ScrollArea>
-		<div class="text-muted-foreground flex items-center justify-between text-xs">
-			<span class="flex items-center gap-1.5">
-				<RefreshCwIcon class="size-3" aria-hidden="true" />
-				refreshes in <span class="text-foreground font-mono">{countdown}s</span>
-			</span>
-			{#if result?.timestamp}
-				<span class="font-mono">{formatTime(result.timestamp)}</span>
-			{/if}
-		</div>
-	{:else if result?.status === 'analyzing'}
-		<p class="text-muted-foreground text-sm">Analyzing…</p>
-	{:else}
-		<p class="text-muted-foreground text-sm">Not yet analyzed.</p>
-	{/if}
+	<!-- Right: analysis -->
+	<div class="flex min-h-0 flex-col gap-2">
+		{#if result?.text}
+			<ScrollArea class="max-h-[55vh] min-h-0 flex-1 md:max-h-[420px]">
+				<div
+					class="prose-sm prose-invert pr-3 leading-relaxed [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_strong]:text-foreground [&_ul]:list-disc [&_ul]:pl-5"
+				>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted Newton model output -->
+					{@html marked(result.text)}
+				</div>
+			</ScrollArea>
+			<div class="text-muted-foreground flex items-center justify-between text-xs">
+				<span class="flex items-center gap-1.5">
+					<RefreshCwIcon class="size-3" aria-hidden="true" />
+					refreshes in <span class="text-foreground font-mono">{countdown}s</span>
+				</span>
+				{#if result?.timestamp}
+					<span class="font-mono">{formatTime(result.timestamp)}</span>
+				{/if}
+			</div>
+		{:else if result?.status === 'analyzing'}
+			<p class="text-muted-foreground text-sm">Analyzing…</p>
+		{:else}
+			<p class="text-muted-foreground text-sm">Not yet analyzed.</p>
+		{/if}
+	</div>
 </div>

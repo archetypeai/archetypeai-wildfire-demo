@@ -295,7 +295,7 @@
 </div>
 
 <Dialog.Root bind:open={modalOpen}>
-	<Dialog.Content class="sm:max-w-2xl">
+	<Dialog.Content class="sm:max-w-4xl">
 		<Dialog.Header>
 			<Dialog.Title class="font-mono">{selectedCamera?.name ?? 'Camera'}</Dialog.Title>
 			<Dialog.Description>
