@@ -8,7 +8,7 @@
 	import AnalysisLog from '$lib/components/ui/custom/analysis-log.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
 	import * as Dialog from '$lib/components/ui/primitives/dialog/index.js';
-	import { analyze, fetchCameras } from '$lib/api/newton.js';
+	import { analyze, analyzeZone, fetchCameras } from '$lib/api/newton.js';
 
 	let selectedZone = $state('palisades');
 	let cameras = $state([]);
@@ -26,7 +26,6 @@
 	let scanTimeout = null;
 	let scanWaitResolve = null;
 	const SCAN_INTERVAL = 20000;
-	const CONCURRENCY = 4;
 
 	// Per-camera status for the grid dots, and the selected camera's full result.
 	let statusMap = $derived(
@@ -126,16 +125,37 @@
 		}
 	}
 
-	// One full pass over the zone, capped concurrency. Stops issuing work the
-	// moment scanning is toggled off.
+	// One full pass over the zone in a single multi-image /query call. The model
+	// returns a per-camera assessment which we fan back out to the status dots
+	// and the rolling log.
 	async function scanZoneOnce() {
-		const queue = [...cameras];
-		const worker = async () => {
-			while (queue.length && scanning) {
-				await analyzeCamera(queue.shift());
+		if (cameras.length === 0) return;
+		for (const cam of cameras) {
+			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
+		}
+		try {
+			const { results, timestamp } = await analyzeZone(cameras);
+			for (const r of results) {
+				const cam = cameras[r.camera_index];
+				if (!cam) continue;
+				cameraResults[cam.id] = { status: r.status, text: r.summary, timestamp };
+				entries = [
+					{
+						id: crypto.randomUUID(),
+						text: r.summary,
+						timestamp,
+						status: r.status,
+						camera: cam.name
+					},
+					...entries
+				].slice(0, 50);
 			}
-		};
-		await Promise.all(Array.from({ length: Math.min(CONCURRENCY, cameras.length) }, worker));
+		} catch (err) {
+			for (const cam of cameras) {
+				cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
+			}
+			console.error('Zone scan failed:', err);
+		}
 	}
 
 	async function scanLoop() {
