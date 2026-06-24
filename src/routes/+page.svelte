@@ -15,15 +15,22 @@
 	let selectedCameraId = $state(null);
 	let camerasLoading = $state(false);
 
-	let running = $state(false);
-	let sessionStatus = $state('idle');
-	let busy = $state(false);
-	let scanning = $state(false);
-	let cameraStatuses = $state({});
-	let entries = $state([]);
+	let scanning = $state(false); // continuous zone scan active
+	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
+	let entries = $state([]); // zone-wide rolling log
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
-	let intervalId = $state(null);
+
+	let scanTimeout = null;
+	let scanWaitResolve = null;
+	const SCAN_INTERVAL = 20000;
+	const CONCURRENCY = 4;
+
+	// Per-camera status for the grid dots, and the selected camera's full result.
+	let statusMap = $derived(
+		Object.fromEntries(Object.entries(cameraResults).map(([id, r]) => [id, r.status]))
+	);
+	let selectedResult = $derived(selectedCameraId ? (cameraResults[selectedCameraId] ?? null) : null);
 
 	function getImageUrl(cameraId) {
 		return `https://cameras.alertcalifornia.org/public-camera-data/${cameraId}/latest-frame.jpg?rqts=${Math.floor(Date.now() / 1000)}`;
@@ -72,10 +79,12 @@
 	}
 
 	async function loadCameras(zoneId) {
+		stopScan();
 		camerasLoading = true;
 		selectedCamera = null;
 		selectedCameraId = null;
-		cameraStatuses = {};
+		cameraResults = {};
+		chatMessages = [];
 		try {
 			const data = await fetchCameras(zoneId);
 			cameras = data.cameras;
@@ -91,73 +100,83 @@
 		}
 	}
 
-	async function analyzeSelected() {
-		if (busy || !running || !selectedCamera) return;
-
-		busy = true;
-
+	// Analyze one camera: update its status dot + the selected-camera result, and
+	// push a zone-log entry. Shared by the zone scan and on-select re-analysis.
+	async function analyzeCamera(cam) {
+		cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
 		try {
-			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(url, selectedCamera);
-			const text = result.analysis;
-			const status = inferStatus(text);
-
+			const result = await analyze(getImageUrl(cam.id), cam);
+			const status = inferStatus(result.analysis);
+			cameraResults[cam.id] = { status, text: result.analysis, timestamp: result.timestamp };
 			entries = [
 				{
 					id: crypto.randomUUID(),
-					text,
+					text: result.analysis,
 					timestamp: result.timestamp,
 					status,
-					camera: selectedCamera.name
+					camera: cam.name
 				},
-				...entries.slice(0, 49)
-			];
+				...entries
+			].slice(0, 50);
 		} catch (err) {
-			console.error('Analysis failed:', err);
-		} finally {
-			busy = false;
+			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
+			console.error(`Analysis failed for ${cam.name}:`, err);
 		}
 	}
 
-	// Scan every camera in the current zone once, in parallel (capped), updating
-	// each camera's status dot and the analysis log as results arrive.
-	async function handleScanZone() {
-		if (scanning || cameras.length === 0) return;
-		scanning = true;
-		for (const cam of cameras) cameraStatuses[cam.id] = 'analyzing';
-
+	// One full pass over the zone, capped concurrency. Stops issuing work the
+	// moment scanning is toggled off.
+	async function scanZoneOnce() {
 		const queue = [...cameras];
-		const CONCURRENCY = 4;
 		const worker = async () => {
-			while (queue.length) {
-				const cam = queue.shift();
-				try {
-					const result = await analyze(getImageUrl(cam.id), cam);
-					const status = inferStatus(result.analysis);
-					cameraStatuses[cam.id] = status;
-					entries = [
-						{
-							id: crypto.randomUUID(),
-							text: result.analysis,
-							timestamp: result.timestamp,
-							status,
-							camera: cam.name
-						},
-						...entries
-					].slice(0, 50);
-				} catch (err) {
-					cameraStatuses[cam.id] = 'error';
-					console.error(`Scan failed for ${cam.name}:`, err);
-				}
+			while (queue.length && scanning) {
+				await analyzeCamera(queue.shift());
 			}
 		};
-
 		await Promise.all(Array.from({ length: Math.min(CONCURRENCY, cameras.length) }, worker));
+	}
+
+	async function scanLoop() {
+		while (scanning) {
+			await scanZoneOnce();
+			if (!scanning) break;
+			// Cancellable idle wait between passes.
+			await new Promise((resolve) => {
+				scanWaitResolve = resolve;
+				scanTimeout = setTimeout(resolve, SCAN_INTERVAL);
+			});
+		}
+	}
+
+	function toggleScan() {
+		if (scanning) {
+			stopScan();
+		} else if (cameras.length > 0) {
+			scanning = true;
+			scanLoop();
+		}
+	}
+
+	function stopScan() {
 		scanning = false;
+		if (scanTimeout) {
+			clearTimeout(scanTimeout);
+			scanTimeout = null;
+		}
+		if (scanWaitResolve) {
+			scanWaitResolve();
+			scanWaitResolve = null;
+		}
+	}
+
+	function handleCameraSelect(cam) {
+		selectedCamera = cam;
+		selectedCameraId = cam.id;
+		analyzeCamera(cam); // fresh analysis for the camera you just picked
 	}
 
 	async function handleChatSend(text) {
-		if (!running || !selectedCamera) return;
+		if (!selectedCamera) return;
 
 		chatMessages = [
 			...chatMessages,
@@ -165,14 +184,8 @@
 		];
 		chatLoading = true;
 
-		while (busy) {
-			await new Promise((r) => setTimeout(r, 200));
-		}
-		busy = true;
-
 		try {
-			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(url, selectedCamera, text);
+			const result = await analyze(getImageUrl(selectedCamera.id), selectedCamera, text);
 			chatMessages = [
 				...chatMessages,
 				{
@@ -193,49 +206,19 @@
 				}
 			];
 		} finally {
-			busy = false;
 			chatLoading = false;
 		}
 	}
 
-	function handleStart() {
-		if (running) return;
-		running = true;
-		sessionStatus = 'active';
-
-		analyzeSelected();
-		intervalId = setInterval(analyzeSelected, 10000);
-	}
-
-	function handleStop() {
-		if (intervalId) {
-			clearInterval(intervalId);
-			intervalId = null;
-		}
-		running = false;
-		sessionStatus = 'idle';
-		busy = false;
-	}
-
-	function handleZoneChange(zoneId) {
-		loadCameras(zoneId);
-	}
-
-	function handleCameraSelect(cam) {
-		selectedCamera = cam;
-		selectedCameraId = cam.id;
-	}
-
-	// Load cameras on mount
+	// Load cameras on mount and whenever the zone changes; stop scanning on teardown.
 	$effect(() => {
 		loadCameras(selectedZone);
+		return () => stopScan();
 	});
 </script>
 
 {#snippet partnerSnippet()}
-	<span class="text-muted-foreground font-mono text-sm tracking-wider uppercase"
-		>Wildfire Watch</span
-	>
+	<span class="text-muted-foreground font-mono text-sm tracking-wider uppercase">Wildfire Watch</span>
 {/snippet}
 
 <div
@@ -243,56 +226,65 @@
 >
 	<Menubar partnerLogo={partnerSnippet}>
 		<div class="flex items-center gap-3">
-			{#if sessionStatus === 'active'}
+			{#if scanning}
 				<StatusBadge label="Newton" percentage={100} initial="N" />
+				<span class="text-muted-foreground hidden font-mono text-xs md:inline">
+					Scanning {cameras.length} cameras
+				</span>
 			{/if}
 			<Button
-				variant="outline"
+				variant={scanning ? 'outline' : 'default'}
 				size="sm"
-				onclick={handleScanZone}
-				disabled={scanning || cameras.length === 0}
+				onclick={toggleScan}
+				disabled={cameras.length === 0}
 			>
-				{scanning ? 'Scanning…' : 'Scan Zone'}
+				{scanning ? 'Stop Scanning' : 'Scan Zone'}
 			</Button>
-			{#if !running}
-				<Button variant="default" size="sm" onclick={handleStart}>Start Analysis</Button>
-			{:else}
-				<Button variant="outline" size="sm" onclick={handleStop}>Stop</Button>
-			{/if}
 		</div>
 	</Menubar>
 
 	<div class="border-border flex items-center gap-6 border-b px-4 py-2">
-		<ZoneSelector bind:selected={selectedZone} onchange={handleZoneChange} />
-		{#if !running}
+		<ZoneSelector bind:selected={selectedZone} />
+		{#if !scanning}
 			<div class="text-muted-foreground hidden items-center gap-4 text-xs lg:flex">
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">1</span> Select a fire zone</span>
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">2</span> Pick a camera</span>
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">3</span> Click Start Analysis</span>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>1</span
+					> Select a fire zone</span
+				>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>2</span
+					> Scan the zone</span
+				>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>3</span
+					> Select a camera for detail</span
+				>
 			</div>
 		{/if}
 	</div>
 
-	<main class="grid grid-cols-3 grid-rows-[auto_1fr] gap-4 overflow-hidden p-4">
-		<CameraViewer
-			camera={selectedCamera}
-			status={busy ? 'analyzing' : running ? 'clear' : 'idle'}
-			class="max-h-[360px]"
-		/>
+	<main class="grid grid-cols-3 grid-rows-2 gap-4 overflow-hidden p-4">
+		<CameraViewer camera={selectedCamera} result={selectedResult} class="row-span-2 max-h-full" />
 
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
-			statuses={cameraStatuses}
+			statuses={statusMap}
 			loading={camerasLoading}
 			onselect={handleCameraSelect}
-			class="row-span-2 max-h-full"
+			class="max-h-full"
 		/>
 
 		<ChatPanel
 			bind:messages={chatMessages}
 			loading={chatLoading}
-			disabled={!running}
+			disabled={!selectedCamera}
 			onsend={handleChatSend}
 			class="row-span-2 max-h-full"
 		/>
