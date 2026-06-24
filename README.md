@@ -1,6 +1,6 @@
 # Newton Wildfire Watch
 
-Real-time wildfire detection dashboard powered by [Newton](https://www.archetypeai.dev/) and the [ALERTCalifornia](https://alertcalifornia.org/) camera network.
+Real-time wildfire detection dashboard powered by [Newton](https://www.archetypeai.io/) and the [ALERTCalifornia](https://alertcalifornia.org/) camera network.
 
 Monitors 1,200+ wildfire cameras across California, focused on 5 major fire zones from recent devastating wildfires. Newton analyzes live camera frames for smoke, fire, haze, and visibility changes.
 
@@ -18,18 +18,19 @@ Monitors 1,200+ wildfire cameras across California, focused on 5 major fire zone
 
 ## Features
 
-- **Multi-camera grid** — browse up to 12 cameras per fire zone with auto-refreshing thumbnails (15s)
-- **Full-frame viewer** — selected camera at full resolution with status overlay
-- **Automatic analysis** — Newton analyzes frames every 10 seconds for smoke, fire, haze indicators
+- **Multi-camera grid** — browse up to 12 cameras per fire zone with auto-refreshing thumbnails (15s) and a live per-camera risk dot
+- **Continuous zone scan** — one toggle scans every camera in the zone on a loop (~30s cycle), keeping the risk dots fresh; a countdown shows when the next scan runs
+- **Per-camera detail** — click any camera to open a modal with its live frame and Newton's detailed analysis
 - **Risk classification** — Clear / Watch / Danger labels based on Newton's assessment
-- **Interactive chat** — ask Newton questions about what it sees
+- **Zone analysis history** — a running log of zone-level overviews over time
+- **Zone chat** — ask Newton about the whole zone or a specific camera, grounded in the latest scan
 - **Zone switching** — switch between 5 fire zones to monitor different regions
 
 ## Stack
 
 - **SvelteKit** with Svelte 5 runes
 - **Archetype AI Design System** — semantic tokens, component primitives, composite patterns
-- **Newton API** — vision model via lens/session API
+- **Newton API** — C 2.6 fusion model (`Newton::c2_6_8b_fp8_*`) via the stateless Direct Query API (`/v0.5/query`); no lens/session
 - **ALERTCalifornia** — public camera data (JPEG snapshots, no auth required)
 - **Tailwind v4** — styling with semantic design tokens
 
@@ -52,13 +53,14 @@ ATAI_API_ENDPOINT=https://api.u1.archetypeai.app/
 npm run dev
 ```
 
-Open `http://localhost:5173`, select a fire zone, then click **Start Analysis**.
+Open `http://localhost:5173`, select a fire zone, then click **Scan Zone**.
 
 ## How It Works
 
-1. Select a fire zone — cameras near that zone load from the ALERTCalifornia API
-2. Click a camera thumbnail to view it full-size
-3. **Start Analysis** creates a Newton lens session
-4. Every 10 seconds, the server fetches the selected camera's latest JPEG, converts to base64, and sends to Newton
-5. Newton returns a wildfire risk assessment displayed in the Analysis panel
-6. Chat lets you ask specific questions about the current camera frame
+All Newton calls use the stateless **Direct Query API** (`/v0.5/query`) — there is no lens or session lifecycle.
+
+1. Select a fire zone — up to 12 nearby cameras load from the ALERTCalifornia API
+2. **Scan Zone** starts a continuous loop. Each pass analyzes every camera in the zone in small **multi-image batches** (4 frames per `/query`, run sequentially to stay within the model's GPU limits); each batch returns a per-camera risk status
+3. A final **text-only** `/query` synthesizes a single zone overview from the per-camera findings. Statuses drive the grid risk dots; the overview is appended to the Zone Analysis history
+4. Click any camera to open a modal with its full frame and a fresh **detailed** analysis (a single-image `/query`)
+5. The chat answers questions about the zone or a specific camera by name, grounded in the latest scan findings (text-only `/query`)
