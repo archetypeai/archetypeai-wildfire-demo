@@ -18,7 +18,7 @@
 
 	let scanning = $state(false); // continuous zone scan active
 	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
-	let zoneOverview = $state(null); // { text, status, timestamp } from the latest scan
+	let zoneHistory = $state([]); // [{ id, text, status, timestamp }] — one per scan, newest first
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
 	let modalOpen = $state(false); // per-camera focus modal
@@ -85,7 +85,7 @@
 		selectedCamera = null;
 		selectedCameraId = null;
 		cameraResults = {};
-		zoneOverview = null;
+		zoneHistory = [];
 		chatMessages = [];
 		try {
 			const data = await fetchCameras(zoneId);
@@ -137,7 +137,10 @@
 				: statuses.includes('warning')
 					? 'warning'
 					: 'good';
-			zoneOverview = { text: overview, status: aggregate, timestamp };
+			zoneHistory = [
+				{ id: crypto.randomUUID(), text: overview, status: aggregate, timestamp },
+				...zoneHistory
+			].slice(0, 30);
 		} catch (err) {
 			for (const cam of cameras) {
 				cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
@@ -290,7 +293,7 @@
 			class="max-h-full"
 		/>
 
-		<ZoneAnalysis overview={zoneOverview} {scanning} class="max-h-full" />
+		<ZoneAnalysis entries={zoneHistory} {scanning} class="max-h-full" />
 
 		<ChatPanel
 			bind:messages={chatMessages}
