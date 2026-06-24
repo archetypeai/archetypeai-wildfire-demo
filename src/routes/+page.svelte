@@ -270,8 +270,6 @@
 	</div>
 
 	<main class="grid grid-cols-3 grid-rows-2 gap-4 overflow-hidden p-4">
-		<CameraViewer camera={selectedCamera} result={selectedResult} class="row-span-2 max-h-full" />
-
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
@@ -280,6 +278,8 @@
 			onselect={handleCameraSelect}
 			class="max-h-full"
 		/>
+
+		<CameraViewer camera={selectedCamera} result={selectedResult} class="row-span-2 max-h-full" />
 
 		<ChatPanel
 			bind:messages={chatMessages}
