@@ -25,7 +25,11 @@
 
 	let scanTimeout = null;
 	let scanWaitResolve = null;
-	const SCAN_INTERVAL = 20000;
+	// Idle wait between scans. A full scan already takes ~24-30s (sequential
+	// chunked vision + overview), and cameras refresh every ~10-30s, so a short
+	// breather keeps scans near-continuous without hammering. Set to 0 for
+	// strictly back-to-back scans.
+	const SCAN_INTERVAL = 5000;
 
 	// Per-camera status for the grid dots, and the selected camera's full result.
 	let statusMap = $derived(
