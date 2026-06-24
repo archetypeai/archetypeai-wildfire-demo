@@ -16,19 +16,19 @@
 
 	const QUICK_PROMPTS = [
 		{
-			label: 'Smoke Check',
+			label: 'Riskiest',
 			icon: FlameIcon,
-			query: 'Analyze this camera frame carefully for any signs of smoke, fire glow, or unusual haze. Is there anything that could indicate a wildfire in the area?'
+			query: 'Which cameras show the highest wildfire risk right now, and why?'
 		},
 		{
-			label: 'Visibility',
+			label: 'Any smoke?',
 			icon: CloudIcon,
-			query: 'What are the current visibility and atmospheric conditions? Is there fog, haze, or any reduced visibility that could be weather-related or smoke-related?'
+			query: 'Are any cameras showing smoke, fire, or haze? List them by name.'
 		},
 		{
-			label: 'Summary',
+			label: 'Zone summary',
 			icon: BarChartIcon,
-			query: 'Describe what you see in this camera frame: terrain, vegetation, sky conditions, time of day, and any notable observations relevant to wildfire monitoring.'
+			query: 'Give a concise summary of current wildfire conditions across the whole zone.'
 		}
 	];
 
@@ -36,6 +36,7 @@
 		messages = $bindable([]),
 		loading = false,
 		disabled = false,
+		zoneName = '',
 		onsend,
 		class: className,
 		...restProps
@@ -68,7 +69,7 @@
 </script>
 
 <BackgroundCard
-	title="Chat"
+	title={zoneName ? `Chat — ${zoneName}` : 'Zone Chat'}
 	icon={MessageSquareIcon}
 	class={cn('flex max-h-full flex-col gap-3 overflow-hidden', className)}
 	{...restProps}
@@ -76,7 +77,7 @@
 	{#if messages.length > 0}
 		<div class="flex items-center justify-between">
 			<div class="flex flex-wrap gap-1.5">
-				{#each QUICK_PROMPTS as prompt}
+				{#each QUICK_PROMPTS as prompt (prompt.label)}
 					<Button
 						variant="outline"
 						size="sm"
@@ -103,10 +104,10 @@
 			{#if messages.length === 0}
 				<div class="flex flex-col items-center gap-3 py-6">
 					<p class="text-muted-foreground text-center text-sm">
-						Ask Newton about the camera feed
+						Ask Newton about the zone or a specific camera by name
 					</p>
 					<div class="flex flex-wrap justify-center gap-1.5">
-						{#each QUICK_PROMPTS as prompt}
+						{#each QUICK_PROMPTS as prompt (prompt.label)}
 							<Button
 								variant="outline"
 								size="sm"
@@ -131,6 +132,7 @@
 					>
 						{#if msg.role === 'assistant'}
 							<div class="prose-sm prose-invert leading-relaxed [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:text-foreground">
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted Newton model output -->
 								{@html marked(msg.text)}
 							</div>
 						{:else}
@@ -161,7 +163,7 @@
 			bind:value={inputValue}
 			oninput={autoResize}
 			onkeydown={handleKeydown}
-			placeholder={disabled ? 'Start analysis first...' : 'Ask about the camera...'}
+			placeholder={disabled ? 'Scan the zone to enable chat...' : 'Ask about the zone or a camera...'}
 			{disabled}
 			rows="1"
 			class={cn(

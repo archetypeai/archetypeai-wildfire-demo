@@ -17,6 +17,38 @@ export async function analyze(imageUrl, camera, query) {
 	return res.json();
 }
 
+// Analyze every camera in a zone in ONE multi-image /query call. Returns
+// per-camera results: [{ camera_index, status, summary }].
+export async function analyzeZone(cameras) {
+	const res = await fetch('/api/analyze-zone', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			cameras: cameras.map((c) => ({ id: c.id, name: c.name, county: c.county }))
+		})
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({}));
+		throw new Error(err.error || 'Zone analysis failed');
+	}
+	return res.json();
+}
+
+// Text-only zone Q&A grounded in the latest scan findings. Answers both
+// zone-wide and specific-camera questions; no images sent.
+export async function chatZone(question, findings, overview) {
+	const res = await fetch('/api/chat-zone', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ question, findings, overview })
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({}));
+		throw new Error(err.error || 'Chat failed');
+	}
+	return res.json();
+}
+
 export async function fetchCameras(zoneId) {
 	const res = await fetch(`/api/cameras?zone=${zoneId}`);
 	if (!res.ok) throw new Error('Failed to fetch cameras');

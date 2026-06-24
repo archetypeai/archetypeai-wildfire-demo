@@ -5,9 +5,10 @@
 	import ZoneSelector from '$lib/components/ui/custom/zone-selector.svelte';
 	import CameraGrid from '$lib/components/ui/custom/camera-grid.svelte';
 	import CameraViewer from '$lib/components/ui/custom/camera-viewer.svelte';
-	import AnalysisLog from '$lib/components/ui/custom/analysis-log.svelte';
+	import ZoneAnalysis from '$lib/components/ui/custom/zone-analysis.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
-	import { analyze, fetchCameras } from '$lib/api/newton.js';
+	import * as Dialog from '$lib/components/ui/primitives/dialog/index.js';
+	import { analyze, analyzeZone, chatZone, fetchCameras } from '$lib/api/newton.js';
 
 	let selectedZone = $state('palisades');
 	let cameras = $state([]);
@@ -15,15 +16,31 @@
 	let selectedCameraId = $state(null);
 	let camerasLoading = $state(false);
 
-	let running = $state(false);
-	let sessionStatus = $state('idle');
-	let busy = $state(false);
-	let scanning = $state(false);
-	let cameraStatuses = $state({});
-	let entries = $state([]);
+	let scanning = $state(false); // continuous zone scan active
+	let scanBusy = $state(false); // a scan pass is actively running (vs idle waiting)
+	let nextScanIn = $state(null); // seconds until the next scan, during the idle wait
+	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
+	let zoneHistory = $state([]); // [{ id, text, status, timestamp }] — one per scan, newest first
+	let zoneFindings = $state([]); // latest per-camera findings [{ name, status, summary }] for chat context
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
-	let intervalId = $state(null);
+
+	let zoneLabel = $derived(selectedZone.charAt(0).toUpperCase() + selectedZone.slice(1));
+	let modalOpen = $state(false); // per-camera focus modal
+
+	let scanTimeout = null;
+	let scanWaitResolve = null;
+	// Idle wait between scans. A full scan already takes ~24-30s (sequential
+	// chunked vision + overview), and cameras refresh every ~10-30s, so a short
+	// breather keeps scans near-continuous without hammering. Set to 0 for
+	// strictly back-to-back scans.
+	const SCAN_INTERVAL = 5000;
+
+	// Per-camera status for the grid dots, and the selected camera's full result.
+	let statusMap = $derived(
+		Object.fromEntries(Object.entries(cameraResults).map(([id, r]) => [id, r.status]))
+	);
+	let selectedResult = $derived(selectedCameraId ? (cameraResults[selectedCameraId] ?? null) : null);
 
 	function getImageUrl(cameraId) {
 		return `https://cameras.alertcalifornia.org/public-camera-data/${cameraId}/latest-frame.jpg?rqts=${Math.floor(Date.now() / 1000)}`;
@@ -72,10 +89,14 @@
 	}
 
 	async function loadCameras(zoneId) {
+		stopScan();
 		camerasLoading = true;
 		selectedCamera = null;
 		selectedCameraId = null;
-		cameraStatuses = {};
+		cameraResults = {};
+		zoneHistory = [];
+		zoneFindings = [];
+		chatMessages = [];
 		try {
 			const data = await fetchCameras(zoneId);
 			cameras = data.cameras;
@@ -91,73 +112,129 @@
 		}
 	}
 
-	async function analyzeSelected() {
-		if (busy || !running || !selectedCamera) return;
-
-		busy = true;
-
+	// Analyze one camera: update its status dot + the selected-camera result, and
+	// push a zone-log entry. Shared by the zone scan and on-select re-analysis.
+	async function analyzeCamera(cam) {
+		cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
 		try {
-			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(url, selectedCamera);
-			const text = result.analysis;
-			const status = inferStatus(text);
-
-			entries = [
-				{
-					id: crypto.randomUUID(),
-					text,
-					timestamp: result.timestamp,
-					status,
-					camera: selectedCamera.name
-				},
-				...entries.slice(0, 49)
-			];
+			const result = await analyze(getImageUrl(cam.id), cam);
+			const status = inferStatus(result.analysis);
+			cameraResults[cam.id] = { status, text: result.analysis, timestamp: result.timestamp };
 		} catch (err) {
-			console.error('Analysis failed:', err);
-		} finally {
-			busy = false;
+			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'error' };
+			console.error(`Analysis failed for ${cam.name}:`, err);
 		}
 	}
 
-	// Scan every camera in the current zone once, in parallel (capped), updating
-	// each camera's status dot and the analysis log as results arrive.
-	async function handleScanZone() {
-		if (scanning || cameras.length === 0) return;
-		scanning = true;
-		for (const cam of cameras) cameraStatuses[cam.id] = 'analyzing';
-
-		const queue = [...cameras];
-		const CONCURRENCY = 4;
-		const worker = async () => {
-			while (queue.length) {
-				const cam = queue.shift();
-				try {
-					const result = await analyze(getImageUrl(cam.id), cam);
-					const status = inferStatus(result.analysis);
-					cameraStatuses[cam.id] = status;
-					entries = [
-						{
-							id: crypto.randomUUID(),
-							text: result.analysis,
-							timestamp: result.timestamp,
-							status,
-							camera: cam.name
-						},
-						...entries
-					].slice(0, 50);
-				} catch (err) {
-					cameraStatuses[cam.id] = 'error';
-					console.error(`Scan failed for ${cam.name}:`, err);
-				}
+	// One full pass over the zone in a single multi-image /query call. The model
+	// returns a per-camera assessment which we fan back out to the status dots
+	// and the rolling log.
+	async function scanZoneOnce() {
+		if (cameras.length === 0) return;
+		const prevStatus = {};
+		for (const cam of cameras) {
+			prevStatus[cam.id] = cameraResults[cam.id]?.status;
+			cameraResults[cam.id] = { ...cameraResults[cam.id], status: 'analyzing' };
+		}
+		try {
+			const { overview, results, timestamp } = await analyzeZone(cameras);
+			for (const r of results) {
+				const cam = cameras[r.camera_index];
+				if (!cam) continue;
+				cameraResults[cam.id] = { ...cameraResults[cam.id], status: r.status, timestamp };
 			}
-		};
+			zoneFindings = results.map((r) => ({
+				name: cameras[r.camera_index]?.name ?? `Camera ${r.camera_index + 1}`,
+				status: r.status,
+				summary: r.summary ?? ''
+			}));
+			const statuses = results.map((r) => r.status);
+			const aggregate = statuses.includes('critical')
+				? 'critical'
+				: statuses.includes('warning')
+					? 'warning'
+					: 'good';
+			zoneHistory = [
+				{ id: crypto.randomUUID(), text: overview, status: aggregate, timestamp },
+				...zoneHistory
+			].slice(0, 30);
+		} catch (err) {
+			// Transient API failure — keep the last known statuses rather than
+			// flashing the whole grid to error on one bad scan.
+			for (const cam of cameras) {
+				cameraResults[cam.id] = { ...cameraResults[cam.id], status: prevStatus[cam.id] };
+			}
+			console.error('Zone scan failed:', err);
+		}
+	}
 
-		await Promise.all(Array.from({ length: Math.min(CONCURRENCY, cameras.length) }, worker));
+	async function scanLoop() {
+		while (scanning) {
+			scanBusy = true;
+			nextScanIn = null;
+			await scanZoneOnce();
+			scanBusy = false;
+			if (!scanning) break;
+			await countdownWait(Math.round(SCAN_INTERVAL / 1000));
+		}
+		scanBusy = false;
+		nextScanIn = null;
+	}
+
+	// Cancellable idle wait that also drives the "next scan in Ns" countdown.
+	function countdownWait(seconds) {
+		return new Promise((resolve) => {
+			nextScanIn = seconds;
+			let remaining = seconds;
+			const finish = () => {
+				if (scanTimeout) {
+					clearInterval(scanTimeout);
+					scanTimeout = null;
+				}
+				scanWaitResolve = null;
+				resolve();
+			};
+			scanWaitResolve = finish;
+			scanTimeout = setInterval(() => {
+				remaining -= 1;
+				nextScanIn = remaining;
+				if (remaining <= 0) finish();
+			}, 1000);
+		});
+	}
+
+	function toggleScan() {
+		if (scanning) {
+			stopScan();
+		} else if (cameras.length > 0) {
+			scanning = true;
+			scanLoop();
+		}
+	}
+
+	function stopScan() {
 		scanning = false;
+		scanBusy = false;
+		nextScanIn = null;
+		if (scanTimeout) {
+			clearInterval(scanTimeout);
+			scanTimeout = null;
+		}
+		if (scanWaitResolve) {
+			scanWaitResolve();
+			scanWaitResolve = null;
+		}
+	}
+
+	function handleCameraSelect(cam) {
+		selectedCamera = cam;
+		selectedCameraId = cam.id;
+		modalOpen = true; // open the focus modal for this camera
+		analyzeCamera(cam); // fresh analysis for the camera you just picked
 	}
 
 	async function handleChatSend(text) {
-		if (!running || !selectedCamera) return;
+		if (zoneFindings.length === 0) return;
 
 		chatMessages = [
 			...chatMessages,
@@ -165,20 +242,14 @@
 		];
 		chatLoading = true;
 
-		while (busy) {
-			await new Promise((r) => setTimeout(r, 200));
-		}
-		busy = true;
-
 		try {
-			const url = getImageUrl(selectedCamera.id);
-			const result = await analyze(url, selectedCamera, text);
+			const result = await chatZone(text, zoneFindings, zoneHistory[0]?.text ?? '');
 			chatMessages = [
 				...chatMessages,
 				{
 					id: crypto.randomUUID(),
 					role: 'assistant',
-					text: result.analysis,
+					text: result.answer,
 					timestamp: result.timestamp
 				}
 			];
@@ -193,49 +264,19 @@
 				}
 			];
 		} finally {
-			busy = false;
 			chatLoading = false;
 		}
 	}
 
-	function handleStart() {
-		if (running) return;
-		running = true;
-		sessionStatus = 'active';
-
-		analyzeSelected();
-		intervalId = setInterval(analyzeSelected, 10000);
-	}
-
-	function handleStop() {
-		if (intervalId) {
-			clearInterval(intervalId);
-			intervalId = null;
-		}
-		running = false;
-		sessionStatus = 'idle';
-		busy = false;
-	}
-
-	function handleZoneChange(zoneId) {
-		loadCameras(zoneId);
-	}
-
-	function handleCameraSelect(cam) {
-		selectedCamera = cam;
-		selectedCameraId = cam.id;
-	}
-
-	// Load cameras on mount
+	// Load cameras on mount and whenever the zone changes; stop scanning on teardown.
 	$effect(() => {
 		loadCameras(selectedZone);
+		return () => stopScan();
 	});
 </script>
 
 {#snippet partnerSnippet()}
-	<span class="text-muted-foreground font-mono text-sm tracking-wider uppercase"
-		>Wildfire Watch</span
-	>
+	<span class="text-muted-foreground font-mono text-sm tracking-wider uppercase">Wildfire Watch</span>
 {/snippet}
 
 <div
@@ -243,60 +284,84 @@
 >
 	<Menubar partnerLogo={partnerSnippet}>
 		<div class="flex items-center gap-3">
-			{#if sessionStatus === 'active'}
+			{#if scanning}
 				<StatusBadge label="Newton" percentage={100} initial="N" />
+				<span class="text-muted-foreground hidden font-mono text-xs md:inline">
+					{#if scanBusy}
+						Scanning {cameras.length} cameras…
+					{:else if nextScanIn !== null}
+						Next scan in {nextScanIn}s
+					{/if}
+				</span>
 			{/if}
 			<Button
-				variant="outline"
+				variant={scanning ? 'outline' : 'default'}
 				size="sm"
-				onclick={handleScanZone}
-				disabled={scanning || cameras.length === 0}
+				onclick={toggleScan}
+				disabled={cameras.length === 0}
 			>
-				{scanning ? 'Scanning…' : 'Scan Zone'}
+				{scanning ? 'Stop Scanning' : 'Scan Zone'}
 			</Button>
-			{#if !running}
-				<Button variant="default" size="sm" onclick={handleStart}>Start Analysis</Button>
-			{:else}
-				<Button variant="outline" size="sm" onclick={handleStop}>Stop</Button>
-			{/if}
 		</div>
 	</Menubar>
 
 	<div class="border-border flex items-center gap-6 border-b px-4 py-2">
-		<ZoneSelector bind:selected={selectedZone} onchange={handleZoneChange} />
-		{#if !running}
+		<ZoneSelector bind:selected={selectedZone} />
+		{#if !scanning}
 			<div class="text-muted-foreground hidden items-center gap-4 text-xs lg:flex">
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">1</span> Select a fire zone</span>
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">2</span> Pick a camera</span>
-				<span><span class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]">3</span> Click Start Analysis</span>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>1</span
+					> Select a fire zone</span
+				>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>2</span
+					> Scan the zone</span
+				>
+				<span
+					><span
+						class="bg-muted text-foreground mr-1 inline-flex size-5 items-center justify-center rounded-full font-mono text-[10px]"
+						>3</span
+					> Select a camera for detail</span
+				>
 			</div>
 		{/if}
 	</div>
 
-	<main class="grid grid-cols-3 grid-rows-[auto_1fr] gap-4 overflow-hidden p-4">
-		<CameraViewer
-			camera={selectedCamera}
-			status={busy ? 'analyzing' : running ? 'clear' : 'idle'}
-			class="max-h-[360px]"
-		/>
-
+	<main class="grid grid-cols-3 gap-4 overflow-hidden p-4">
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
-			statuses={cameraStatuses}
+			statuses={statusMap}
 			loading={camerasLoading}
 			onselect={handleCameraSelect}
-			class="row-span-2 max-h-full"
+			class="max-h-full"
 		/>
+
+		<ZoneAnalysis entries={zoneHistory} {scanning} class="max-h-full" />
 
 		<ChatPanel
 			bind:messages={chatMessages}
 			loading={chatLoading}
-			disabled={!running}
+			disabled={zoneFindings.length === 0}
+			zoneName={zoneLabel}
 			onsend={handleChatSend}
-			class="row-span-2 max-h-full"
+			class="max-h-full"
 		/>
-
-		<AnalysisLog {entries} class="max-h-full" />
 	</main>
 </div>
+
+<Dialog.Root bind:open={modalOpen}>
+	<Dialog.Content class="sm:max-w-4xl">
+		<Dialog.Header>
+			<Dialog.Title class="font-mono">{selectedCamera?.name ?? 'Camera'}</Dialog.Title>
+			<Dialog.Description>
+				{selectedCamera?.county ? `${selectedCamera.county} County · ` : ''}ALERTCalifornia live feed
+			</Dialog.Description>
+		</Dialog.Header>
+		<CameraViewer camera={selectedCamera} result={selectedResult} />
+	</Dialog.Content>
+</Dialog.Root>
