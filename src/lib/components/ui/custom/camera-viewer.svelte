@@ -1,9 +1,7 @@
 <script>
 	import { cn } from '$lib/utils.js';
-	import BackgroundCard from '$lib/components/ui/patterns/background-card/index.js';
 	import Badge from '$lib/components/ui/primitives/badge/index.js';
 	import { ScrollArea } from '$lib/components/ui/primitives/scroll-area/index.js';
-	import CameraIcon from '@lucide/svelte/icons/camera';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 
 	let { camera = null, result = null, class: className, ...restProps } = $props();
@@ -48,13 +46,8 @@
 	}
 </script>
 
-<BackgroundCard
-	title={camera ? camera.name : 'Camera Feed'}
-	icon={CameraIcon}
-	class={cn('flex max-h-full flex-col gap-3 overflow-hidden', className)}
-	{...restProps}
->
-	<div class="relative shrink-0 overflow-hidden rounded-xs">
+<div class={cn('flex flex-col gap-3', className)} {...restProps}>
+	<div class="relative overflow-hidden rounded-xs">
 		{#if imageUrl}
 			<img
 				src={imageUrl}
@@ -74,40 +67,24 @@
 				</Badge>
 			</div>
 		{/if}
-
-		{#if camera}
-			<div class="absolute right-2 bottom-2">
-				<Badge variant="outline" class="bg-background/80 font-mono text-[10px] backdrop-blur-sm">
-					{camera.county ?? ''} County
-				</Badge>
-			</div>
-		{/if}
 	</div>
 
-	{#if camera}
-		<div class="flex min-h-0 flex-1 flex-col gap-2">
-			{#if result?.text}
-				<ScrollArea class="min-h-0 flex-1">
-					<p class="text-foreground pr-3 text-sm leading-relaxed whitespace-pre-wrap">
-						{result.text}
-					</p>
-				</ScrollArea>
-				<div class="text-muted-foreground flex items-center justify-between text-xs">
-					<span class="flex items-center gap-1.5">
-						<RefreshCwIcon class="size-3" aria-hidden="true" />
-						refreshes in <span class="text-foreground font-mono">{countdown}s</span>
-					</span>
-					{#if result?.timestamp}
-						<span class="font-mono">{formatTime(result.timestamp)}</span>
-					{/if}
-				</div>
-			{:else if result?.status === 'analyzing'}
-				<p class="text-muted-foreground flex-1 text-sm">Analyzing…</p>
-			{:else}
-				<p class="text-muted-foreground flex-1 text-sm">
-					Not yet analyzed — Scan Zone, or re-select this camera for a fresh read.
-				</p>
+	{#if result?.text}
+		<ScrollArea class="max-h-48">
+			<p class="text-foreground pr-3 text-sm leading-relaxed whitespace-pre-wrap">{result.text}</p>
+		</ScrollArea>
+		<div class="text-muted-foreground flex items-center justify-between text-xs">
+			<span class="flex items-center gap-1.5">
+				<RefreshCwIcon class="size-3" aria-hidden="true" />
+				refreshes in <span class="text-foreground font-mono">{countdown}s</span>
+			</span>
+			{#if result?.timestamp}
+				<span class="font-mono">{formatTime(result.timestamp)}</span>
 			{/if}
 		</div>
+	{:else if result?.status === 'analyzing'}
+		<p class="text-muted-foreground text-sm">Analyzing…</p>
+	{:else}
+		<p class="text-muted-foreground text-sm">Not yet analyzed.</p>
 	{/if}
-</BackgroundCard>
+</div>

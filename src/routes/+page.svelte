@@ -7,6 +7,7 @@
 	import CameraViewer from '$lib/components/ui/custom/camera-viewer.svelte';
 	import AnalysisLog from '$lib/components/ui/custom/analysis-log.svelte';
 	import ChatPanel from '$lib/components/ui/custom/chat-panel.svelte';
+	import * as Dialog from '$lib/components/ui/primitives/dialog/index.js';
 	import { analyze, fetchCameras } from '$lib/api/newton.js';
 
 	let selectedZone = $state('palisades');
@@ -20,6 +21,7 @@
 	let entries = $state([]); // zone-wide rolling log
 	let chatMessages = $state([]);
 	let chatLoading = $state(false);
+	let modalOpen = $state(false); // per-camera focus modal
 
 	let scanTimeout = null;
 	let scanWaitResolve = null;
@@ -172,6 +174,7 @@
 	function handleCameraSelect(cam) {
 		selectedCamera = cam;
 		selectedCameraId = cam.id;
+		modalOpen = true; // open the focus modal for this camera
 		analyzeCamera(cam); // fresh analysis for the camera you just picked
 	}
 
@@ -269,7 +272,7 @@
 		{/if}
 	</div>
 
-	<main class="grid grid-cols-3 grid-rows-2 gap-4 overflow-hidden p-4">
+	<main class="grid grid-cols-3 gap-4 overflow-hidden p-4">
 		<CameraGrid
 			{cameras}
 			bind:selectedId={selectedCameraId}
@@ -279,16 +282,26 @@
 			class="max-h-full"
 		/>
 
-		<CameraViewer camera={selectedCamera} result={selectedResult} class="row-span-2 max-h-full" />
+		<AnalysisLog {entries} class="max-h-full" />
 
 		<ChatPanel
 			bind:messages={chatMessages}
 			loading={chatLoading}
 			disabled={!selectedCamera}
 			onsend={handleChatSend}
-			class="row-span-2 max-h-full"
+			class="max-h-full"
 		/>
-
-		<AnalysisLog {entries} class="max-h-full" />
 	</main>
 </div>
+
+<Dialog.Root bind:open={modalOpen}>
+	<Dialog.Content class="sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title class="font-mono">{selectedCamera?.name ?? 'Camera'}</Dialog.Title>
+			<Dialog.Description>
+				{selectedCamera?.county ? `${selectedCamera.county} County · ` : ''}ALERTCalifornia live feed
+			</Dialog.Description>
+		</Dialog.Header>
+		<CameraViewer camera={selectedCamera} result={selectedResult} />
+	</Dialog.Content>
+</Dialog.Root>
