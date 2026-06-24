@@ -17,6 +17,8 @@
 	let camerasLoading = $state(false);
 
 	let scanning = $state(false); // continuous zone scan active
+	let scanBusy = $state(false); // a scan pass is actively running (vs idle waiting)
+	let nextScanIn = $state(null); // seconds until the next scan, during the idle wait
 	let cameraResults = $state({}); // { [id]: { status, text, timestamp } }
 	let zoneHistory = $state([]); // [{ id, text, status, timestamp }] — one per scan, newest first
 	let chatMessages = $state([]);
@@ -159,14 +161,37 @@
 
 	async function scanLoop() {
 		while (scanning) {
+			scanBusy = true;
+			nextScanIn = null;
 			await scanZoneOnce();
+			scanBusy = false;
 			if (!scanning) break;
-			// Cancellable idle wait between passes.
-			await new Promise((resolve) => {
-				scanWaitResolve = resolve;
-				scanTimeout = setTimeout(resolve, SCAN_INTERVAL);
-			});
+			await countdownWait(Math.round(SCAN_INTERVAL / 1000));
 		}
+		scanBusy = false;
+		nextScanIn = null;
+	}
+
+	// Cancellable idle wait that also drives the "next scan in Ns" countdown.
+	function countdownWait(seconds) {
+		return new Promise((resolve) => {
+			nextScanIn = seconds;
+			let remaining = seconds;
+			const finish = () => {
+				if (scanTimeout) {
+					clearInterval(scanTimeout);
+					scanTimeout = null;
+				}
+				scanWaitResolve = null;
+				resolve();
+			};
+			scanWaitResolve = finish;
+			scanTimeout = setInterval(() => {
+				remaining -= 1;
+				nextScanIn = remaining;
+				if (remaining <= 0) finish();
+			}, 1000);
+		});
 	}
 
 	function toggleScan() {
@@ -180,8 +205,10 @@
 
 	function stopScan() {
 		scanning = false;
+		scanBusy = false;
+		nextScanIn = null;
 		if (scanTimeout) {
-			clearTimeout(scanTimeout);
+			clearInterval(scanTimeout);
 			scanTimeout = null;
 		}
 		if (scanWaitResolve) {
@@ -251,7 +278,11 @@
 			{#if scanning}
 				<StatusBadge label="Newton" percentage={100} initial="N" />
 				<span class="text-muted-foreground hidden font-mono text-xs md:inline">
-					Scanning {cameras.length} cameras
+					{#if scanBusy}
+						Scanning {cameras.length} cameras…
+					{:else if nextScanIn !== null}
+						Next scan in {nextScanIn}s
+					{/if}
 				</span>
 			{/if}
 			<Button
