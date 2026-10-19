@@ -126,7 +126,7 @@
 		}
 	}
 
-	// One full pass over the zone in a single multi-image /query call. The model
+	// One full pass over the zone in a single multi-image /api/lens/query call. The model
 	// returns a per-camera assessment which we fan back out to the status dots
 	// and the rolling log.
 	async function scanZoneOnce() {
