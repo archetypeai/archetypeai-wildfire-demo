@@ -1,4 +1,4 @@
-// Stateless analysis against Newton C 2.6 via /query — no session lifecycle.
+// Stateless analysis against Newton C 2.6 via /api/lens/query — no session lifecycle.
 // Each call sends one camera frame as a self-contained request.
 export async function analyze(imageUrl, camera, query) {
 	const body = { imageUrl };
@@ -17,7 +17,7 @@ export async function analyze(imageUrl, camera, query) {
 	return res.json();
 }
 
-// Analyze every camera in a zone in ONE multi-image /query call. Returns
+// Analyze every camera in a zone in ONE multi-image /api/lens/query call. Returns
 // per-camera results: [{ camera_index, status, summary }].
 export async function analyzeZone(cameras) {
 	const res = await fetch('/api/analyze-zone', {

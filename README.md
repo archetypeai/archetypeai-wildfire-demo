@@ -30,7 +30,7 @@ Monitors 1,200+ wildfire cameras across California, focused on 5 major fire zone
 
 - **SvelteKit** with Svelte 5 runes
 - **Archetype AI Design System** — semantic tokens, component primitives, composite patterns
-- **Newton API** — C 2.6 fusion model (`Newton::c2_6_8b_fp8_*`) via the stateless Direct Query API (`/v0.5/query`); no lens/session
+- **Newton API** — C 2.6 fusion model (`Newton::c2_6_8b_fp8_*`) via the stateless Direct Query API (`/api/lens/query`); no lens/session
 - **ALERTCalifornia** — public camera data (JPEG snapshots, no auth required)
 - **Tailwind v4** — styling with semantic design tokens
 
@@ -44,7 +44,7 @@ Create a `.env` file:
 
 ```
 ATAI_API_KEY=your_api_key_here
-ATAI_API_ENDPOINT=https://api.u1.archetypeai.app/
+ATAI_API_ENDPOINT=https://platform.u1.archetypeai.app
 ```
 
 ## Development
@@ -57,10 +57,10 @@ Open `http://localhost:5173`, select a fire zone, then click **Scan Zone**.
 
 ## How It Works
 
-All Newton calls use the stateless **Direct Query API** (`/v0.5/query`) — there is no lens or session lifecycle.
+All Newton calls use the stateless **Direct Query API** (`/api/lens/query`) — there is no lens or session lifecycle.
 
 1. Select a fire zone — up to 12 nearby cameras load from the ALERTCalifornia API
-2. **Scan Zone** starts a continuous loop. Each pass analyzes every camera in the zone in small **multi-image batches** (4 frames per `/query`, run sequentially to stay within the model's GPU limits); each batch returns a per-camera risk status
-3. A final **text-only** `/query` synthesizes a single zone overview from the per-camera findings. Statuses drive the grid risk dots; the overview is appended to the Zone Analysis history
-4. Click any camera to open a modal with its full frame and a fresh **detailed** analysis (a single-image `/query`)
-5. The chat answers questions about the zone or a specific camera by name, grounded in the latest scan findings (text-only `/query`)
+2. **Scan Zone** starts a continuous loop. Each pass analyzes every camera in the zone in small **multi-image batches** (4 frames per `/api/lens/query`, run sequentially to stay within the model's GPU limits); each batch returns a per-camera risk status
+3. A final **text-only** `/api/lens/query` synthesizes a single zone overview from the per-camera findings. Statuses drive the grid risk dots; the overview is appended to the Zone Analysis history
+4. Click any camera to open a modal with its full frame and a fresh **detailed** analysis (a single-image `/api/lens/query`)
+5. The chat answers questions about the zone or a specific camera by name, grounded in the latest scan findings (text-only `/api/lens/query`)

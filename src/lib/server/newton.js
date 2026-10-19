@@ -1,12 +1,13 @@
 import { ATAI_API_KEY, ATAI_API_ENDPOINT } from '$env/static/private';
 
-const API_VERSION = 'v0.5';
+// Every API surface lives under one versionless /api prefix.
+const API_PREFIX = 'api';
 // C 2.6 fusion checkpoint — the full `Newton::` prefix AND the `_fp8_` segment
 // are required; omitting either returns 400 invalid_model_version.
 const MODEL_VERSION = 'Newton::c2_6_8b_fp8_260424d7a55d5e';
 
 function apiUrl(path) {
-	return `${ATAI_API_ENDPOINT.replace(/\/$/, '')}/${API_VERSION}${path}`;
+	return `${ATAI_API_ENDPOINT.replace(/\/$/, '')}/${API_PREFIX}${path}`;
 }
 
 // Canonical extraction path is response.response[0]; fall back across the
@@ -57,12 +58,12 @@ async function fetchBase64Event(url) {
 	};
 }
 
-// POST one /query with the shared auth + model defaults; returns the model text.
+// POST one /api/lens/query with the shared auth + model defaults; returns the model text.
 async function postQuery(body, timeoutMs) {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		const res = await fetch(apiUrl('/query'), {
+		const res = await fetch(apiUrl('/lens/query'), {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${ATAI_API_KEY}`,
@@ -73,7 +74,7 @@ async function postQuery(body, timeoutMs) {
 		});
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({}));
-			throw new Error(`POST /query failed: ${res.status} - ${JSON.stringify(err)}`);
+			throw new Error(`POST /api/lens/query failed: ${res.status} - ${JSON.stringify(err)}`);
 		}
 		return extractText(await res.json());
 	} finally {
@@ -168,7 +169,7 @@ export async function chatAboutZone(question, findings, overview, instruction, t
 	);
 }
 
-// Single stateless /query call against the C 2.6 fusion model. The camera frame
+// Single stateless /api/lens/query call against the C 2.6 fusion model. The camera frame
 // is attached inline as a base64 image event; the system turn goes in
 // `instruction_prompt` (the only field C 2.6 honors), the question in `query`.
 export async function analyzeImage(
@@ -182,7 +183,7 @@ export async function analyzeImage(
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const res = await fetch(apiUrl('/query'), {
+		const res = await fetch(apiUrl('/lens/query'), {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${ATAI_API_KEY}`,
@@ -205,7 +206,7 @@ export async function analyzeImage(
 		});
 		if (!res.ok) {
 			const err = await res.json().catch(() => ({}));
-			throw new Error(`POST /query failed: ${res.status} - ${JSON.stringify(err)}`);
+			throw new Error(`POST /api/lens/query failed: ${res.status} - ${JSON.stringify(err)}`);
 		}
 		return extractText(await res.json());
 	} finally {
