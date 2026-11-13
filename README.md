@@ -64,3 +64,20 @@ All Newton calls use the stateless **Direct Query API** (`/api/lens/query`) — 
 3. A final **text-only** `/api/lens/query` synthesizes a single zone overview from the per-camera findings. Statuses drive the grid risk dots; the overview is appended to the Zone Analysis history
 4. Click any camera to open a modal with its full frame and a fresh **detailed** analysis (a single-image `/api/lens/query`)
 5. The chat answers questions about the zone or a specific camera by name, grounded in the latest scan findings (text-only `/api/lens/query`)
+
+## Licence
+
+The code is under the [Apache License 2.0](LICENSE). The repo holds no camera data:
+the app loads frames live from ALERTCalifornia. The screenshot in `static/demo.png`
+shows ALERTCalifornia camera frames, which aren't covered by the Apache licence: see
+[Data attribution](#data-attribution).
+
+The PP Neue Montreal fonts in `static/fonts/` are copyright Pangram Pangram Foundry and
+aren't covered by the Apache licence either. The files in `.claude/` carry their own MIT
+licence ([`.claude/LICENSE`](.claude/LICENSE)).
+
+## Data attribution
+
+Camera images: ALERTCalifornia | UC San Diego. ALERTCalifornia allows screen captures
+from its live camera feeds for public or educational use with that credit (see its
+[Images and Video](https://alertcalifornia.org/images-and-video/) page).
